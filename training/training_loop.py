@@ -20,7 +20,7 @@ from torch_utils import misc
 from torch_utils import training_stats
 from torch_utils.ops import conv2d_gradfix
 from torch_utils.ops import grid_sample_gradfix
-
+from tqdm import tqdm
 import legacy
 from metrics import metric_main
 
@@ -112,7 +112,7 @@ def training_loop(
     apa_kimg                = 500,      # APA adjustment speed, measured in how many kimg it takes for p to increase/decrease by one unit.
     with_dataaug            = False,    # Enable standard data augmentations for the discriminator inputs? Usually improve further thanks to the compatibility.
     total_kimg              = 25000,    # Total length of the training, measured in thousands of real images.
-    kimg_per_tick           = 4,        # Progress snapshot interval.
+    kimg_per_tick           = 1,        # Progress snapshot interval.
     image_snapshot_ticks    = 50,       # How often to save image snapshots? None = disable.
     network_snapshot_ticks  = 50,       # How often to save network snapshots? None = disable.
     resume_pkl              = None,     # Network pickle to resume training from.
@@ -253,6 +253,7 @@ def training_loop(
     tick_start_time = time.time()
     maintenance_time = tick_start_time - start_time
     batch_idx = 0
+    pbar = tqdm(total_kimg * 1000)
     if progress_fn is not None:
         progress_fn(0, total_kimg)
     while True:
@@ -317,6 +318,8 @@ def training_loop(
             augment_pipe.p.copy_((augment_pipe.p + adjust).max(misc.constant(0, device=device)))
 
         # Perform maintenance tasks once per tick.
+        pbar.update(batch_size)
+        pbar.set_description("%d image out of %d images per tick"%(cur_nimg, tick_start_nimg + kimg_per_tick * 1000) )
         done = (cur_nimg >= total_kimg * 1000)
         if (not done) and (cur_tick != 0) and (cur_nimg < tick_start_nimg + kimg_per_tick * 1000):
             continue
@@ -337,6 +340,7 @@ def training_loop(
         training_stats.report0('Timing/total_hours', (tick_end_time - start_time) / (60 * 60))
         training_stats.report0('Timing/total_days', (tick_end_time - start_time) / (24 * 60 * 60))
         if rank == 0:
+            print()
             print(' '.join(fields))
 
         # Check for abort.
